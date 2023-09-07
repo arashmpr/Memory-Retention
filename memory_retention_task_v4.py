@@ -10,10 +10,10 @@ Original file is located at
 from google.colab import drive
 drive.mount('/content/gdrive')
 
-dataset_path = "/content/gdrive/MyDrive/Memory Retention Research/Datasets/Dataset_10000/Dataset_10000.csv"
-train_path = "/content/gdrive/MyDrive/Memory Retention Research/Datasets/Dataset_5000/train.csv"
-test_path = "/content/gdrive/MyDrive/Memory Retention Research/Datasets/Dataset_5000/test.csv"
-val_path = "/content/gdrive/MyDrive/Memory Retention Research/Datasets/Dataset_5000/validation.csv"
+dataset_path = "/content/gdrive/MyDrive/Memory Retention Research/Datasets/Dataset_500/Dataset_500.csv"
+train_path = "/content/gdrive/MyDrive/Memory Retention Research/Datasets/Dataset_500/train.csv"
+test_path = "/content/gdrive/MyDrive/Memory Retention Research/Datasets/Dataset_500/test.csv"
+val_path = "/content/gdrive/MyDrive/Memory Retention Research/Datasets/Dataset_500/val.csv"
 base_path = "/content/gdrive/MyDrive/Memory Retention Research/Datasets/"
 
 !pip install datasets
@@ -652,25 +652,123 @@ class Embedding():
     print("Everything DONE!")
     print()
 
-  def get_inputs(self, df, embed_dim):
+  def divide_inputs(self, part_type, embed_dim):
+    if part_type == 'train':
+      df = self.train
+    elif part_type == 'test':
+      df = self.test
+    elif part_type == 'val':
+      df = self.val
 
-    return self.train, self.test, self.val
+    X1 = np.array(df['paragraph_representation'].values.tolist()).reshape(-1, embed_dim)
+    X2 = np.array(df['word_representation'].values.tolist()).reshape(-1, embed_dim)
+    y = np.array(df['Label'].values.tolist()).reshape(-1, 1)
 
-    # X1 = np.array(df['paragraph_representation'].values.tolist()).reshape(-1, embed_dim)
-    # X2 = np.array(df['word_representation'].values.tolist()).reshape(-1, embed_dim)
-    # y = np.array(df['Label'].values.tolist()).reshape(-1, 1)
+    return (X1, X2, y)
 
-    # return (X1, X2, y)
+  def get_inputs(self):
+    train = self.divide_inputs('train', 300)
+    test = self.divide_inputs('test', 300)
+    val = self.divide_inputs('val', 300)
+    return train, test, val
+
+dfs = {}
+dfs['train'] = pd.read_csv(train_path)
+dfs['test'] = pd.read_csv(test_path)
+dfs['val'] = pd.read_csv(val_path)
 
 data = Embedding(glove_model, 0)
 
 data.run(dfs, technique='glove')
 
-# train = data.get_inputs(data.train, 300)
-# test = data.get_inputs(data.test, 300)
-# val = data.get_inputs(data.val, 300)
+train, test, val = data.get_inputs()
+(X_train_1, X_train_2, y_train), (X_test_1, X_test_2, y_test), (X_val_1, X_val_2, y_val) = train, test, val
 
-train, test, val = data.get_inputs(data.train, 0)
+print(X_train_1.shape)
+print(X_train_2.shape)
+print(y_train.shape)
+
+class Classifier():
+
+  def build_model(self, shape=(300), optimizer='AdaGrad', activation='relu', units=300, dropout_rate=0.5, learning_rate=0.01, no_layers=1):
+    input_1 = Input(shape=shape)
+    input_2 = Input(shape=shape)
+    inputs = Concatenate(axis=1)([input_1, input_2])
+    dense_layer = Dense(units=units, activation=activation)(inputs)
+
+    if no_layers > 1:
+      for i in range(no_layers-1):
+        dense_layer = Dense(units=units, activation=activation)(dense_layer)
+    dropout_layer = Dropout(dropout_rate)(dense_layer)
+    dot_layer = Dot(axes=1)([input_1, input_2])
+    concat_layer = Concatenate(axis=1)([dropout_layer, dot_layer])
+    outputs = Dense(units=1, activation='sigmoid')(concat_layer)
+
+    self.model = Model(inputs=[input_1, input_2], outputs=outputs)
+    if optimizer == 'Adam':
+      self.model.compile(optimizer=Adam(), loss='binary_crossentropy', metrics=['accuracy'])
+    elif optimizer == 'AdaGrad':
+      self.model.compile(optimizer=Adagrad(), loss='binary_crossentropy', metrics=['accuracy'])
+    elif optimizer == 'AdaDelta':
+      self.model.compile(optimizer=Adadelta(), loss='binary_crossentropy', metrics=['accuracy'])
+
+  def print_model_summary(self):
+    print(self.model.summary())
+
+  def train(self, train, val, epochs, batch_size, hyperparameters, shape):
+    optimizer, activation, units, dropout_rate = hyperparameters
+    self.build_model(shape, optimizer, activation, units, dropout_rate)
+
+    X_train_1, X_train_2, y_train = train
+    X_val_1, X_val_2, y_val = val
+
+    self.history = self.model.fit([X_train_1, X_train_2], y_train, validation_data=([X_val_1, X_val_2], y_val), epochs=epochs, batch_size=batch_size, verbose=1)
+
+  def get_model(self):
+    return self.model
+
+  def get_history(self):
+    return self.history
+
+classifier = Classifier()
+classifier.build_model()
+classifier.print_model_summary()
+
+hyperparameters_list = []
+optimizers = ['Adam']
+activations = ['relu']
+units = [300]
+dropout_rates = [0.7]
+for optimizer in optimizers:
+      for activation in activations:
+        for unit in units:
+          for dropout_rate in dropout_rates:
+            hyperparameters_list.append((optimizer, activation, unit, dropout_rate))
+
+epochs = [20]
+batch_sizes = [32]
+
+shape=(300)
+max_acc = 0
+
+for epoch in epochs:
+  for batch_size in batch_sizes:
+    for hyperparameters in hyperparameters_list:
+      optimizer, activation, units, dropout_rate = hyperparameters
+      print("Epoch {} and Batch Size {}".format(epoch, batch_size))
+      print("Optimizer {} Activation {} Units {} Dropout Rate {}".format(optimizer, activation, units, dropout_rate))
+      print()
+      classifier.train(train, val, epoch, batch_size, hyperparameters, shape)
+      model = classifier.get_model()
+      loss, accuracy = model.evaluate([X_test_1, X_test_2], y_test)
+      if accuracy >= max_acc:
+        max_acc = accuracy
+        best_model = model
+      print()
+      print("------------------------------------------------------------")
+    print(max_acc)
+
+def calculate_average_peformance(test, best_model):
 
 from torch.utils.data import DataLoader, TensorDataset, Dataset
 from torch import nn
@@ -774,90 +872,6 @@ for epoch in range(epochs):
     loss.backward()
 
     optimizer.step()
-
-hyperparameters_list = []
-optimizers = ['Adam']
-activations = ['relu']
-units = [300]
-dropout_rates = [0.1, 0.3, 0.5, 0.8]
-for optimizer in optimizers:
-      for activation in activations:
-        for unit in units:
-          for dropout_rate in dropout_rates:
-            hyperparameters_list.append((optimizer, activation, unit, dropout_rate))
-
-class Classifier():
-
-  def build_model(self, shape=(300), optimizer='AdaGrad', activation='relu', units=300, dropout_rate=0.5, learning_rate=0.01, no_layers=1):
-    input_1 = Input(shape=shape)
-    input_2 = Input(shape=shape)
-    inputs = Concatenate(axis=1)([input_1, input_2])
-    dense_layer = Dense(units=units, activation=activation)(inputs)
-
-    if no_layers > 1:
-      for i in range(no_layers-1):
-        dense_layer = Dense(units=units, activation=activation)(dense_layer)
-    dropout_layer = Dropout(dropout_rate)(dense_layer)
-    dot_layer = Dot(axes=1)([input_1, input_2])
-    concat_layer = Concatenate(axis=1)([dropout_layer, dot_layer])
-    outputs = Dense(units=1, activation='sigmoid')(concat_layer)
-
-    self.model = Model(inputs=[input_1, input_2], outputs=outputs)
-    if optimizer == 'Adam':
-      self.model.compile(optimizer=Adam(), loss='binary_crossentropy', metrics=['accuracy'])
-    elif optimizer == 'AdaGrad':
-      self.model.compile(optimizer=Adagrad(), loss='binary_crossentropy', metrics=['accuracy'])
-    elif optimizer == 'AdaDelta':
-      self.model.compile(optimizer=Adadelta(), loss='binary_crossentropy', metrics=['accuracy'])
-
-  def print_model_summary(self):
-    print(self.model.summary())
-
-  def train(self, train, val, epochs, batch_size, hyperparameters, shape):
-    optimizer, activation, units, dropout_rate = hyperparameters
-    self.build_model(shape, optimizer, activation, units, dropout_rate)
-
-    X_train_1, X_train_2, y_train = train
-    X_val_1, X_val_2, y_val = val
-
-    self.history = self.model.fit([X_train_1, X_train_2], y_train, validation_data=([X_val_1, X_val_2], y_val), epochs=epochs, batch_size=batch_size, verbose=1)
-
-  def get_model(self):
-    return self.model
-
-  def get_history(self):
-    return self.history
-
-classifier = Classifier()
-classifier.build_model()
-classifier.print_model_summary()
-
-epochs = [50]
-batch_sizes = [32]
-
-shape=(300)
-max_acc = 0
-
-X_test_1, X_test_2, y_test = test
-
-for epoch in epochs:
-  for batch_size in batch_sizes:
-    for hyperparameters in hyperparameters_list:
-      optimizer, activation, units, dropout_rate = hyperparameters
-      print("Epoch {} and Batch Size {}".format(epoch, batch_size))
-      print("Optimizer {} Activation {} Units {} Dropout Rate {}".format(optimizer, activation, units, dropout_rate))
-      print()
-      classifier.train(train, val, epoch, batch_size, hyperparameters, shape)
-      model = classifier.get_model()
-      loss, accuracy = model.evaluate([X_test_1, X_test_2], y_test)
-      if accuracy >= max_acc:
-        max_acc = accuracy
-        best_model = model
-      print()
-      print("------------------------------------------------------------")
-    print(max_acc)
-
-def calculate_average_peformance(test):
 
 del res
 
