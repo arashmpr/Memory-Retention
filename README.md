@@ -6,12 +6,16 @@ This repository has been authored by Arash Mohamadpour, an undergraduate researc
 
 In this repository we cover the following areas:
 
+- Requirements
 - Datasets
 - Sequence Embeddings
 - Neural Networks
 - Data Prepration
 - Evaluating
 - Conclusion
+
+## Requirements
+You can execute the `.ipynb` files in Google Colab to obtain valid results. However, for the `.py` files, you will need to install certain Python libraries as specified in the `utils` file.
 
 ## Datasets
 
