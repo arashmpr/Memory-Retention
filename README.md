@@ -19,6 +19,8 @@ You can execute the `.ipynb` files in Google Colab to obtain valid results. Howe
 
 ## Datasets
 For this paper, we have gathered four main datasets with varying context lengths. Additional information about the vocabulary of this repository can be found here.
+You can access the dataset [here](https://drive.google.com/drive/folders/1Nwje2HuTbQwu3_7s4zeQaeS_gt85punS?usp=sharing).
+
 
 ## Sequence Embeddings
 In this section, we delve into five types of embeddings as described in the paper.
